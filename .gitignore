@@ -33,3 +33,7 @@ go.work.sum
 
 # goreleaser files
 dist/
+
+# external-dns-synology-webhook specific ignores
+external-dns-synology-values.yaml
+external-dns-synology-secret.yaml

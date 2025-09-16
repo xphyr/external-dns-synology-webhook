@@ -5,7 +5,7 @@ go 1.24.6
 require (
 	github.com/codingconcepts/env v0.0.0-20240618133406-5b0845441187
 	github.com/sirupsen/logrus v1.9.3
-	github.com/xphyr/synology-csi v1.4.5-0.20250915190024-537ef1cc8a73
+	github.com/xphyr/synology-csi v1.4.5-0.20250916223731-d87fedd093ba
 	sigs.k8s.io/external-dns v0.19.0
 )
 
