@@ -1,16 +1,25 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/codingconcepts/env"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/xphyr/external-dns-synology-webhook/internal/server"
 	"github.com/xphyr/external-dns-synology-webhook/internal/synology"
 	"sigs.k8s.io/external-dns/provider/webhook/api"
 )
+
+var logLevel string
+
+func init() {
+	flag.StringVar(&logLevel, "loglevel", "info", "Set the log level (trace, debug, info, warn, error, fatal, panic)")
+}
 
 // loop waits for a SIGTERM or a SIGINT and then shuts down the server.
 func loop(status *server.HealthStatus) {
@@ -24,8 +33,21 @@ func loop(status *server.HealthStatus) {
 }
 
 func main() {
+
+	flag.Parse() // Parse the command-line flags
+
+	// Parse the log level string into a logrus.Level
+	level, err := logrus.ParseLevel(logLevel)
+	if err != nil {
+		fmt.Printf("Invalid log level specified: %s. Defaulting to info.\n", logLevel)
+		logrus.SetLevel(logrus.InfoLevel) // Set default if parsing fails
+	} else {
+		logrus.SetLevel(level)
+	}
+
 	// Read server options
 	serverOptions := &server.ServerOptions{}
+
 	if err := env.Set(serverOptions); err != nil {
 		log.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package synology
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -81,13 +82,17 @@ func (p *SynologyProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, e
 	log.Info("Listing Synology DNS records")
 	records, err := p.client.RecordList(p.domainFilter.Filters, "master")
 	if err != nil {
+		log.Warningf("Error listing Synology DNS records: %v", err)
 		return nil, err
 	}
 
 	var endpoints []*endpoint.Endpoint
 	for _, r := range records {
 		if provider.SupportedRecordType(string(r.Type)) && p.domainFilter.Match(r.Record) {
+			log.Debugf("Converting Synology DNS record to endpoint: %+v", r)
 			endpoints = append(endpoints, endpoint.NewEndpoint(string(r.Record), string(r.Type), string(r.Value)))
+		} else {
+			log.Debugf("Skipping Synology DNS record: %+v", r)
 		}
 	}
 
@@ -96,18 +101,18 @@ func (p *SynologyProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, e
 
 func (p *SynologyProvider) AdjustEndpoints(endpoints []*endpoint.Endpoint) ([]*endpoint.Endpoint, error) {
 	log.Info("Adjusting endpoints in Synology DNS records")
-	log.Info(endpoints)
+	log.Debug(endpoints)
 	adjustedEndpoints := []*endpoint.Endpoint{}
 	for _, ep := range endpoints {
 		adjustedTargets := endpoint.Targets{}
 		for _, t := range ep.Targets {
-			log.Infof("Calling RecordDelete for ep.DNSName: %s ep.RecordType: %s ep.RecordTTL %v", ep.DNSName, ep.RecordType, ep.RecordTTL)
-			err := p.client.RecordDelete(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t))
+			log.Debugf("Calling RecordDelete for ep.DNSName: %s ep.RecordType: %s ep.RecordTTL %v ep.RecordTarget %s, with filter %s", ep.DNSName, ep.RecordType, ep.RecordTTL, t, p.domainFilter.Filters)
+			err := p.client.RecordDelete(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t, int64(ep.RecordTTL), p.domainFilter.Filters))
 			if err != nil {
 				log.Warning(err)
 			}
-			log.Infof("Calling RecordCreate for ep.DNSName: %s ep.RecordType: %s ep.RecordTTL %v", ep.DNSName, ep.RecordType, ep.RecordTTL)
-			err = p.client.RecordCreate(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t))
+			log.Debugf("Calling RecordCreate for ep.DNSName: %s ep.RecordType: %s ep.RecordTTL %v ep.RecordTarget %s, with filter %s", ep.DNSName, ep.RecordType, ep.RecordTTL, t, p.domainFilter.Filters)
+			err = p.client.RecordCreate(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t, int64(ep.RecordTTL), p.domainFilter.Filters))
 			if err != nil {
 				log.Warning(err)
 			} else {
@@ -122,10 +127,10 @@ func (p *SynologyProvider) AdjustEndpoints(endpoints []*endpoint.Endpoint) ([]*e
 
 func (p *SynologyProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	log.Info(("Applying changes to Synology DNS records"))
-	log.Info(changes)
+	log.Debug(changes)
 	for _, ep := range append(changes.Delete, changes.UpdateOld...) {
 		for _, t := range ep.Targets {
-			err := p.client.RecordDelete(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t))
+			err := p.client.RecordDelete(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t, int64(ep.RecordTTL), p.domainFilter.Filters))
 			if err != nil {
 				log.Warning(err)
 			}
@@ -133,7 +138,7 @@ func (p *SynologyProvider) ApplyChanges(ctx context.Context, changes *plan.Chang
 	}
 	for _, ep := range append(changes.Create, changes.UpdateNew...) {
 		for _, t := range ep.Targets {
-			err := p.client.RecordCreate(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t))
+			err := p.client.RecordCreate(createSynologyDNSRecordRequest(ep.RecordType, ep.DNSName, t, int64(ep.RecordTTL), p.domainFilter.Filters))
 			if err != nil {
 				log.Warning(err)
 			}
@@ -142,13 +147,27 @@ func (p *SynologyProvider) ApplyChanges(ctx context.Context, changes *plan.Chang
 	return nil
 }
 
-func createSynologyDNSRecordRequest(recordType, recordName, recordValue string) webapi.DNSRecord {
+func createSynologyDNSRecordRequest(recordType string, recordName string, recordValue string, recordTTL int64, zoneList []string) webapi.DNSRecord {
+
+	// recordTTL is optional from external-dns, so we will pick an arbitrary 3000 if not set
+	if recordTTL == 0 {
+		recordTTL = 3000
+	}
+
+	// we need to find the zone that we will be applying this change to
+	zoneName := ""
+	for _, zone := range zoneList {
+		if strings.HasSuffix(recordName, zone) {
+			zoneName = zone
+		}
+	}
+
 	return webapi.DNSRecord{
 		Record:     recordName + ".",
 		Type:       recordType,
 		Value:      recordValue,
-		TTL:        "600",
-		ZoneName:   "xphyrlab.net", // need to make this dynamic
-		DomainName: "xphyrlab.net", // need to make this dynamic
+		TTL:        strconv.FormatInt(recordTTL, 10),
+		ZoneName:   zoneName,
+		DomainName: zoneName,
 	}
 }

@@ -20,6 +20,8 @@ type ServerOptions struct {
 	ReadTimeout int `env:"READ_TIMEOUT" default:"60000"`
 	// Write timeout in milliseconds
 	WriteTimeout int `env:"WRITE_TIMEOUT" default:"60000"`
+	// Log level (logrus levels: panic, fatal, error, warn, info, debug, trace)
+	LogLevel string `env:"LOG_LEVEL" default:"info"`
 }
 
 // GetWebhookAddress returns the webhook address as "host:port".
